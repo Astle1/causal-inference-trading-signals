@@ -5,84 +5,97 @@
 The implementation code for this project is intentionally not included in this repository at this stage.  
 The work presented here is part of an ongoing research paper, and the codebase is being actively refined as the paper undergoes further review and revision.
 
-The repository currently serves to document the methodology, experimental design, validation strategy, and key empirical results of the study.  
+This repository is intended to document the research motivation, causal methodology, validation strategy, and empirical findings.  
 The complete implementation will be released once the research process is finalized.
 
 ---
 
 ## Overview
 
-Traditional algorithmic trading models rely on correlation, which can be misleading and lead to false signals. This project develops and implements a rigorous, multi-stage causal inference pipeline to identify robust causal relationships in financial time series, distinguishing them from simple correlations.
+Most algorithmic trading systems rely on correlation-based signals, which often appear statistically strong but fail under regime changes or out-of-sample testing. This project is motivated by the observation that correlation alone does not imply a meaningful or actionable relationship in financial markets.
 
-The approach moves beyond simple prediction and uses causal inference to uncover directed relationships between major US stocks and sector ETFs. A hybrid framework is employed, where Granger causality is used for candidate discovery and stricter causal validation techniques are applied to filter spurious relationships.
+This work develops a multi-stage causal inference pipeline designed to distinguish true, directed causal effects from spurious correlations in financial time series. Rather than optimizing predictive accuracy, the primary objective is to identify relationships that remain stable under rigorous statistical scrutiny and explicit attempts at refutation.
+
+The central guiding principle of this project is adversarial validation: every discovered relationship is treated as suspect until it survives multiple independent tests designed to invalidate it.
 
 ---
 
 ## Data and Scope
 
-The analysis uses daily data for six individual stocks (AAPL, MSFT, NVDA, JPM, UNH, XOM) and three sector ETFs (XLK, XLF, XLV) from January 1, 2010 to December 31, 2023. All datasets include daily close price and trading volume.
+The analysis uses daily financial data from January 1, 2010 to December 31, 2023. The dataset consists of six large-cap US equities and three sector-level exchange-traded funds representing major market segments.
 
-Primary features engineered from the raw data include logarithmic returns, logarithmic volume, and annualized volatility computed over a 21-day rolling window.
-
-**TABLE 1–9 PLACEHOLDER: RAW DATA SAMPLES**  
-**TABLE 10–18 PLACEHOLDER: PROCESSED FEATURE SAMPLES**
+Daily close prices and trading volumes are used to construct derived features that are more suitable for causal analysis. The long time horizon allows the study to span multiple market regimes, including bull markets, bear markets, and high-volatility periods.
 
 ---
 
-## Preprocessing and Assumptions
+## Feature Engineering and Preprocessing
 
-From the raw data, logarithmic returns, logarithmic volume, and annualized volatility were constructed. Rows containing missing values introduced by rolling window calculations were removed, and remaining missing values were forward-filled.
+Raw price and volume data are transformed into logarithmic returns, logarithmic trading volume, and rolling annualized volatility. Logarithmic returns are used due to their time-additive properties and their ability to treat upward and downward price movements symmetrically.
 
-The full dataset was standardized to zero mean and unit variance to ensure numerical stability and prevent large-magnitude features from dominating the analysis. Stationarity of all time-series was verified using the Augmented Dickey-Fuller test, which is a prerequisite for Granger causality analysis.
+Volatility is computed using a rolling window to capture recent risk dynamics, while logarithmic volume is used to stabilize extreme spikes in trading activity. The resulting dataset is standardized to ensure numerical stability and to prevent scale effects from biasing regression estimates.
 
----
-
-## Causal Discovery
-
-Pairwise Granger causality tests were applied to identify potential time-lagged relationships between all variables. Relationships with p-values below a strict threshold were retained as candidate edges. To control graph complexity, the number of incoming predictors for each target variable was limited to the strongest relationships.
-
-A domain-specific constraint was applied that prioritizes directional influence from sector-level ETFs to individual stocks. The resulting candidate edges were assembled into a directed acyclic graph representing the initial causal hypothesis.
-
-**FIGURE 1 PLACEHOLDER: INFLUENCERS AND RECEIVERS GRAPH**
+Stationarity is explicitly enforced using the Augmented Dickey-Fuller test. Non-stationary series are excluded from causal discovery, as failure to enforce stationarity is known to generate spurious causal relationships in time-series models.
 
 ---
 
-## Validation and Robustness
+## Causal Discovery Philosophy
 
-Each candidate causal relationship was subjected to a four-part validation procedure. Ordinary Least Squares regression with a backdoor adjustment set was used to estimate causal effects while controlling for confounding sector-level variables.
+Causal discovery in this project is deliberately conservative. Pairwise Granger causality is used only as a screening mechanism to identify candidate relationships, not as evidence of causation.
 
-Non-parametric bootstrap analysis with 300 iterations was used to construct 95% confidence intervals, and placebo tests were conducted by permuting treatment vectors to generate empirical null distributions. Multiple hypothesis testing was addressed using the Benjamini-Hochberg procedure to control the False Discovery Rate.
+Candidate relationships are filtered using strict significance thresholds and structural constraints that reflect domain knowledge. In particular, sector-level market indicators are treated as potential upstream drivers, while individual equities are treated primarily as downstream receivers.
 
-Only relationships that passed all validation criteria were included in the final strict set, resulting in 1,835 robust causal edges.
-
----
-
-## Results
-
-Analysis of the strict set reveals a hierarchical market structure in which sector ETFs act as causal influencers while individual stocks primarily act as receivers. A recurring pattern of volatility and volume contagion is observed, along with a consistent negative lagged-return dynamic indicative of short-term mean reversion.
-
-After applying an additional filter requiring a larger minimum effect size and stricter false discovery control, a single gold-standard causal relationship was isolated:
-
-XLK_log_return → NVDA_log_return (lag = 1 day)
-
-This relationship is negative and statistically significant, directly contrasting with the strong positive correlation observed between the two assets.
-
-**TABLE 23 PLACEHOLDER: GOLD-STANDARD EDGE STATISTICS**  
-**FIGURE 3 PLACEHOLDER: OLS ESTIMATE WITH BOOTSTRAP CONFIDENCE INTERVAL**
+The output of this stage is not a final result, but a hypothesis set that is explicitly assumed to contain false positives.
 
 ---
 
-## Ablation Study
+## Validation as an Adversarial Process
 
-Removing stationarity testing led to a substantial increase in spurious causal discoveries driven by non-stationary price series. Removing backdoor adjustment resulted in widespread false causal links driven by sector-level confounding.
+The core contribution of this project lies in its validation strategy. Each candidate causal relationship is subjected to multiple independent tests, all of which must agree for the relationship to be retained.
 
-Excluding placebo and bootstrap validation significantly increased the false discovery rate, confirming the necessity of multi-layer validation in large-scale causal discovery.
+Ordinary Least Squares regression is used as the primary estimator, but only in conjunction with backdoor adjustment to control for market-wide confounders. Sector-level variables are included explicitly to test whether apparent stock-to-stock effects disappear once broader market movement is accounted for.
+
+To assess stability, non-parametric bootstrap analysis is performed using hundreds of resampled datasets. Relationships whose confidence intervals cross zero are rejected, regardless of nominal statistical significance.
+
+Placebo tests are used as a direct attempt to falsify causal claims. By deliberately breaking the temporal structure of the treatment variable and re-estimating the model, an empirical null distribution is constructed. Relationships that remain indistinguishable from random noise under this test are discarded.
+
+Finally, multiple hypothesis testing is addressed using False Discovery Rate control. This step is critical given the large number of candidate relationships and is treated as a necessary condition rather than a formality.
 
 ---
 
-## Conclusion and Future Work
+## Results Under Scrutiny
 
-This project presents a comprehensive causal inference pipeline applied to algorithmic trading signals. Thousands of correlation-driven relationships were filtered into a compact and statistically robust causal structure.
+After applying all validation filters, the majority of initially plausible relationships are rejected. This outcome is intentional and is treated as evidence of the strictness of the pipeline rather than a limitation.
 
-Future extensions include the use of non-linear causal estimators, higher-frequency data to capture intraday dynamics, and dynamic causal graphs that adapt to changing market regimes.
+The surviving relationships exhibit consistent patterns across market regimes, including volatility transmission effects and short-term mean-reversion dynamics. Importantly, several relationships that appear strongly correlated in raw data are explicitly shown to lack causal support once confounding variables are controlled for.
 
+A final, highly selective filtering stage isolates a single relationship that satisfies stricter effect-size and statistical confidence requirements. This relationship remains statistically significant, stable under resampling, and robust to placebo testing, despite contradicting naive correlation-based intuition.
+
+---
+
+## Ablation and Self-Critique
+
+An ablation study is conducted to evaluate the necessity of each component of the pipeline. Removing stationarity testing leads to a sharp increase in false causal discoveries driven by non-stationary price trends.
+
+Removing confounder control results in widespread false positives, particularly among stocks within the same sector, demonstrating that many apparent causal effects are artifacts of shared market exposure.
+
+Eliminating bootstrap or placebo validation significantly increases the false discovery rate, confirming that reliance on p-values alone is insufficient for reliable causal inference in financial time series.
+
+These ablation results are treated as evidence that the final findings are not artifacts of any single modeling choice.
+
+---
+
+## Limitations and Future Directions
+
+The current pipeline relies on linear estimators, which limits its ability to capture non-linear causal effects. Future work will explore more expressive causal models that retain interpretability while allowing for richer functional relationships.
+
+The analysis is conducted on daily data, which may obscure shorter-term causal dynamics. Applying the pipeline to higher-frequency data may reveal transient causal effects that are invisible at daily resolution.
+
+Finally, the causal graph is assumed to be static over the full time horizon. Incorporating rolling windows or regime-aware causal discovery may provide a more realistic representation of evolving market structure.
+
+---
+
+## Summary
+
+This project prioritizes causal validity over predictive performance. The methodology is explicitly designed to challenge its own conclusions through multiple independent validation mechanisms.
+
+Rather than maximizing the number of discovered relationships, the pipeline is optimized to eliminate false positives and retain only those effects that survive systematic attempts at refutation.
